@@ -5,5 +5,7 @@ else
     using Test
 end
 
+include("script.jl")
+
 # write your own tests here
 @test 1 == 2

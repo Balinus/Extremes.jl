@@ -19,7 +19,7 @@ function gevloglike(y::Real,μ::Real,σ::Real,ξ::Real)
 
 end
 
-function gevfitlmom(y::Array{Float64,1})
+function gevfitlmom(y::Array{N,1} where N)
 
     n = length(y)
     sort!(y)
@@ -41,7 +41,7 @@ function gevfitlmom(y::Array{Float64,1})
     return GeneralizedExtremeValue(μ, σ, ξ)
 end
 
-function gevfit(y::Array{Float64,1})
+function gevfit(y::Array{N,1} where N)
 
     # only MLE for the moment
 
