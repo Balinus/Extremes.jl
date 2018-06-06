@@ -7,6 +7,10 @@ y = rand(pd,300)
 
 f = gevfit(y)
 
+θ̂ = params(f)
+
+H = gevhessian(y,θ̂...)
+
 #= Location non-stationary =#
 
 using Extremes, Distributions, DataFrames

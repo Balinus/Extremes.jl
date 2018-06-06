@@ -62,16 +62,19 @@ function gevfit(y::Array{Float64,1})
 
   solution  = JuMP.solve(mle)
 
-  θ̂ = [getvalue(μ), exp(getvalue(ϕ)), getvalue(ξ)]
-
-  logl(θ) = sum(gevloglike.(y,θ...))
-
-  H = ForwardDiff.hessian(logl, θ̂)
-
     if solution == :Optimal
-        return GeneralizedExtremeValue(θ̂...)
-        #return H
+        return GeneralizedExtremeValue(getvalue(μ), exp(getvalue(ϕ)), getvalue(ξ))
     else
       error("The algorithm did not find a solution.")
     end
+end
+
+function gevhessian(y::Array{Float64,1},μ::Real,σ::Real,ξ::Real)
+
+    #= Estimate the hessian matrix evaluated at (μ, σ, ξ) for the iid gev random sample y =#
+
+    logl(θ) = sum(gevloglike.(y,θ[1],θ[2],θ[3]))
+
+    H = ForwardDiff.hessian(logl, [μ σ ξ])
+
 end
