@@ -1,18 +1,24 @@
 
-using Extremes, Distributions
+using Distributions
+using Extremes
 
 pd = GeneralizedExtremeValue(0,1,.1)
 
 y = rand(pd,300)
 
-f = gevfit(y)
+f = gevfit(y,method="lmom")
 
 θ̂ = params(f)
 
 H = gevhessian(y,θ̂...)
 
 
-
+# function gevfit(y::Array{Float64,1}; method="ml", ini = Float64[])
+#
+# println("argument: $method")
+# println("argument: $ini")
+#
+# end
 
 
 #= Location non-stationary =#

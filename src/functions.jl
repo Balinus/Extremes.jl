@@ -41,33 +41,38 @@ function gevfitlmom(y::Array{Float64,1})
     return GeneralizedExtremeValue(μ, σ, ξ)
 end
 
-function gevfit(y::Array{Float64,1})
+function gevfit(y::Array{Float64,1}; method="ml", initialvalues=[])
 
-    # only MLE for the moment
+    if method == "ml"
 
-    # Get initial values with the L-moments method
-    pd₀ = gevfitlmom(y)
+        if isempty(initialvalues)
+            initialvalues = params(gevfitlmom(y))
+        end
 
-    (μ₀, σ₀, ξ₀) = params(pd₀)
+        # Log-likelihood function to maximize
+        # In optimization, the function to maximize is refered to the "obective function"
+        fobj(μ, ϕ, ξ) = sum(gevloglike.(y,μ,exp(ϕ),ξ))
 
-  fobj(μ, ϕ, ξ) = sum(gevloglike.(y,μ,exp(ϕ),ξ))
+        # https://discourse.julialang.org/t/the-function-to-optimize-in-jump/4964/13
+        mle = Model(solver=IpoptSolver(print_level=0))
+        JuMP.register(mle,:fobj,3,fobj,autodiff=true)
+        @variable(mle, μ, start = initialvalues[1])
+        @variable(mle, ϕ, start = log(initialvalues[2]))
+        @variable(mle, ξ, start = initialvalues[3])
+        @NLobjective(mle, Max, fobj(μ, ϕ, ξ) )
+        solution  = JuMP.solve(mle)
 
-  # https://discourse.julialang.org/t/the-function-to-optimize-in-jump/4964/13
-  mle = Model(solver=IpoptSolver(print_level=0))
-  JuMP.register(mle,:fobj,3,fobj,autodiff=true)
-  @variable(mle, μ, start=μ₀)
-  @variable(mle, ϕ, start=log(σ₀))
-  @variable(mle, ξ, start=ξ₀)
-  @NLobjective(mle, Max, fobj(μ, ϕ, ξ) )
+        if solution == :Optimal
+            return GeneralizedExtremeValue(getvalue(μ), exp(getvalue(ϕ)), getvalue(ξ))
+        else
+            error("The algorithm did not find a solution.")
+        end
 
-  solution  = JuMP.solve(mle)
-
-    if solution == :Optimal
-        return GeneralizedExtremeValue(getvalue(μ), exp(getvalue(ϕ)), getvalue(ξ))
-    else
-      error("The algorithm did not find a solution.")
+    elseif method == "lmom"
+        return gevfitlmom(y)
     end
 end
+
 
 function gevhessian(y::Array{Float64,1},μ::Real,σ::Real,ξ::Real)
 
