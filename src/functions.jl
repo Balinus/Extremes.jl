@@ -16,7 +16,6 @@ function gevloglike(y::Real,μ::Real,σ::Real,ξ::Real)
         end
 
     return loglike
-
 end
 
 function gevfitlmom(y::Array{N,1} where N)
@@ -38,40 +37,138 @@ function gevfitlmom(y::Array{N,1} where N)
 
     ξ = -k
 
-    return GeneralizedExtremeValue(μ, σ, ξ)
+    return [μ, σ, ξ]
 end
 
-function gevfit(y::Array{N,1} where N)
+function gevfit(y::Array{N,1} where N; method="ml", initialvalues=Float64[], location_covariate=Float64[], logscale_covariate =Float64[])
 
-    # only MLE for the moment
+    if method == "ml"
 
-    # Get initial values with the L-moments method
-    pd₀ = gevfitlmom(y)
+        if isempty(location_covariate) & isempty(logscale_covariate)
+            if isempty(initialvalues)
+                initialvalues = gevfitlmom(y)
+            end
 
-    (μ₀, σ₀, ξ₀) = params(pd₀)
+            fobj(μ, ϕ, ξ) = sum(gevloglike.(y,μ,exp(ϕ),ξ))
+            mle = Model(solver=IpoptSolver(print_level=0,sb="yes"))
+            JuMP.register(mle,:fobj,3,fobj,autodiff=true)
+            @variable(mle, μ, start = initialvalues[1])
+            @variable(mle, ϕ, start = log(initialvalues[2]))
+            @variable(mle, ξ, start = initialvalues[3])
+            @NLobjective(mle, Max, fobj(μ, ϕ, ξ) )
+            solution  = JuMP.solve(mle)
 
-  fobj(μ, ϕ, ξ) = sum(gevloglike.(y,μ,exp(ϕ),ξ))
+            if solution == :Optimal
+                θ = [getvalue(μ) exp(getvalue(ϕ)) getvalue(ξ)]
+            else
+                error("The algorithm did not find a solution.")
+            end
 
-  # https://discourse.julialang.org/t/the-function-to-optimize-in-jump/4964/13
-  mle = Model(solver=IpoptSolver(print_level=0))
-  JuMP.register(mle,:fobj,3,fobj,autodiff=true)
-  @variable(mle, μ, start=μ₀)
-  @variable(mle, ϕ, start=log(σ₀))
-  @variable(mle, ξ, start=ξ₀)
-  @NLobjective(mle, Max, fobj(μ, ϕ, ξ) )
+        elseif !isempty(location_covariate) & isempty(logscale_covariate)
 
-  solution  = JuMP.solve(mle)
+            if isempty(initialvalues)
+                initialvalues = zeros(4)
+                if length(y)>20
+                    θ₀ = gevfitlmom(y[1:20])
+                else
+                    θ₀ = gevfitlmom(y)
+                end
+                initialvalues[1] = θ₀[1]
+                initialvalues[3] = log(θ₀[2])
+                initialvalues[4] = θ₀[3]
+            end
 
-  θ̂ = [getvalue(μ), exp(getvalue(ϕ)), getvalue(ξ)]
+            fobj_location(μ₀, μ₁, ϕ, ξ) = sum(gevloglike.(y,μ₀+μ₁*location_covariate,exp(ϕ),ξ))
+            mle = Model(solver=IpoptSolver(print_level=0, sb="yes"))
+            JuMP.register(mle,:fobj_location,4,fobj_location,autodiff=true)
+            @variable(mle, μ₀, start=  initialvalues[1])
+            @variable(mle, μ₁, start = initialvalues[2])
+            @variable(mle, ϕ, start = initialvalues[3])
+            @variable(mle, ξ, start= initialvalues[4])
+            @NLobjective(mle, Max, fobj_location(μ₀, μ₁, ϕ, ξ) )
+            solution  = JuMP.solve(mle)
 
-  logl(θ) = sum(gevloglike.(y,θ...))
+            if solution == :Optimal
+                θ = [getvalue(μ₀) getvalue(μ₁) exp(getvalue(ϕ)) getvalue(ξ)]
+            else
+                error("The algorithm did not find a solution.")
+            end
 
-  H = ForwardDiff.hessian(logl, θ̂)
+        elseif isempty(location_covariate) & !isempty(logscale_covariate)
 
-    if solution == :Optimal
-        return GeneralizedExtremeValue(θ̂...)
-        #return H
-    else
-      error("The algorithm did not find a solution.")
+            if isempty(initialvalues)
+                initialvalues = zeros(4)
+                if length(y)>20
+                    θ₀ = gevfitlmom(y[1:20])
+                else
+                    θ₀ = gevfitlmom(y)
+                end
+                initialvalues[1] = θ₀[1]
+                initialvalues[2] = log(θ₀[2])
+                initialvalues[4] = θ₀[3]
+            end
+
+            fobj_logscale(μ, ϕ₀, ϕ₁, ξ) = sum(gevloglike.(y,μ,exp.(ϕ₀+ϕ₁*logscale_covariate),ξ))
+            mle = Model(solver=IpoptSolver(print_level=0, sb="yes"))
+            JuMP.register(mle,:fobj_logscale,4,fobj_logscale,autodiff=true)
+            @variable(mle, μ, start=  initialvalues[1])
+            @variable(mle, ϕ₀, start = initialvalues[2])
+            @variable(mle, ϕ₁, start = initialvalues[3])
+            @variable(mle, ξ, start= initialvalues[4])
+            @NLobjective(mle, Max, fobj_logscale(μ, ϕ₀, ϕ₁, ξ) )
+            solution  = JuMP.solve(mle)
+
+            if solution == :Optimal
+                θ = [getvalue(μ) getvalue(ϕ₀) getvalue(ϕ₁) getvalue(ξ)]
+            else
+                error("The algorithm did not find a solution.")
+            end
+
+        elseif !isempty(location_covariate) & !isempty(logscale_covariate)
+
+            if isempty(initialvalues)
+                initialvalues = zeros(5)
+                if length(y)>20
+                    θ₀ = gevfitlmom(y[1:20])
+                else
+                    θ₀ = gevfitlmom(y)
+                end
+                initialvalues[1] = θ₀[1]
+                initialvalues[3] = log(θ₀[2])
+                initialvalues[5] = θ₀[3]
+            end
+
+            fobj_locationscale(μ₀, μ₁, ϕ₀, ϕ₁, ξ) = sum(gevloglike.(y,μ₀+μ₁*location_covariate,exp.(ϕ₀+ϕ₁*logscale_covariate),ξ))
+            mle = Model(solver=IpoptSolver(print_level=0, sb="yes"))
+            JuMP.register(mle,:fobj_locationscale,5,fobj_locationscale,autodiff=true)
+            @variable(mle, μ₀, start=  initialvalues[1])
+            @variable(mle, μ₁, start = initialvalues[2])
+            @variable(mle, ϕ₀, start = initialvalues[3])
+            @variable(mle, ϕ₁, start = initialvalues[4])
+            @variable(mle, ξ, start= initialvalues[5])
+            @NLobjective(mle, Max, fobj_locationscale(μ₀, μ₁, ϕ₀, ϕ₁, ξ) )
+            solution  = JuMP.solve(mle)
+
+            if solution == :Optimal
+                θ = [getvalue(μ₀) getvalue(μ₁) getvalue(ϕ₀) getvalue(ϕ₁) getvalue(ξ)]
+            else
+                error("The algorithm did not find a solution.")
+            end
+
+        end
+
+    elseif method == "lmom"
+        return gevfitlmom(y)
     end
+end
+
+
+function gevhessian(y::Array{Float64,1},μ::Real,σ::Real,ξ::Real)
+
+    #= Estimate the hessian matrix evaluated at (μ, σ, ξ) for the iid gev random sample y =#
+
+    logl(θ) = sum(gevloglike.(y,θ[1],θ[2],θ[3]))
+
+    H = ForwardDiff.hessian(logl, [μ σ ξ])
+
 end

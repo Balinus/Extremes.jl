@@ -6,6 +6,6 @@ using ForwardDiff
 
 include("functions.jl")
 
-export gevfit
+export gevfit, gevloglike
 
 end # module
