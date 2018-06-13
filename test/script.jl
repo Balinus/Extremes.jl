@@ -2,19 +2,28 @@
 using Distributions
 using Extremes
 
-x = linspace(0,3,1000)
+pd = GeneralizedExtremeValue(0,1,.1)
+y = rand(pd,50)
+θ̂ = gevfit(y)
 
-pd = GeneralizedExtremeValue.(x,1,.1)
-pd = GeneralizedExtremeValue.(0,exp.(log1p.(x/2)),.1)
-pd = GeneralizedExtremeValue.(x,exp.(log1p.(x/2)),.1)
 
+μ = linspace(0,3,300)
+pd = GeneralizedExtremeValue.(μ,1,.1)
 y = rand.(pd)
+θ̂ = gevfit(y,method="ml", location_covariate = μ)
 
-# f = gevfitns(y,method="ml",location_covariate=collect(x))
-g = gevfit(y,method="ml")
-g = gevfit(y,method="ml", location_covariate=collect(x))
-g = gevfit(y,method="ml", logscale_covariate = collect(x))
-g = gevfit(y,method="ml", location_covariate=collect(x), logscale_covariate = collect(x))
+
+ϕ = linspace(0,1,300)
+pd = GeneralizedExtremeValue.(0,exp.(ϕ),.1)
+y = rand.(pd)
+θ̂ = gevfit(y,method="ml", initialvalues = [0;0;0;.1], logscale_covariate = ϕ)
+
+
+μ = linspace(0,3,300)
+ϕ = linspace(0,1,300)
+pd = GeneralizedExtremeValue.(μ,exp.(ϕ),.1)
+y = rand.(pd)
+θ̂ = gevfit(y,method="ml", location_covariate = μ, logscale_covariate = ϕ)
 
 # θ̂ = params(f)
 

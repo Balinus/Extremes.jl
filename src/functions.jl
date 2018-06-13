@@ -79,8 +79,7 @@ function gevfit(y::Array{Float64,1}; method="ml", initialvalues=Float64[], locat
             end
 
             fobj_location(μ₀, μ₁, ϕ, ξ) = sum(gevloglike.(y,μ₀+μ₁*location_covariate,exp(ϕ),ξ))
-            #mle = Model(solver=IpoptSolver(print_level=0, sb="yes"))
-            mle = Model(solver=IpoptSolver())
+            mle = Model(solver=IpoptSolver(print_level=0, sb="yes"))
             JuMP.register(mle,:fobj_location,4,fobj_location,autodiff=true)
             @variable(mle, μ₀, start=  initialvalues[1])
             @variable(mle, μ₁, start = initialvalues[2])
