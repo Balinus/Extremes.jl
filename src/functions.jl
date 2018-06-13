@@ -16,7 +16,6 @@ function gevloglike(y::Real,μ::Real,σ::Real,ξ::Real)
         end
 
     return loglike
-
 end
 
 function gevfitlmom(y::Array{Float64,1})
@@ -38,34 +37,125 @@ function gevfitlmom(y::Array{Float64,1})
 
     ξ = -k
 
-    return GeneralizedExtremeValue(μ, σ, ξ)
+    return [μ, σ, ξ]
 end
 
-function gevfit(y::Array{Float64,1}; method="ml", initialvalues=[])
+function gevfit(y::Array{Float64,1}; method="ml", initialvalues=Float64[], location_covariate=Float64[], logscale_covariate =Float64[])
 
     if method == "ml"
 
-        if isempty(initialvalues)
-            initialvalues = params(gevfitlmom(y))
-        end
+        if isempty(location_covariate) & isempty(logscale_covariate)
+            if isempty(initialvalues)
+                initialvalues = gevfitlmom(y)
+            end
 
-        # Log-likelihood function to maximize
-        # In optimization, the function to maximize is refered to the "obective function"
-        fobj(μ, ϕ, ξ) = sum(gevloglike.(y,μ,exp(ϕ),ξ))
+            fobj(μ, ϕ, ξ) = sum(gevloglike.(y,μ,exp(ϕ),ξ))
+            mle = Model(solver=IpoptSolver(print_level=0,sb="yes"))
+            JuMP.register(mle,:fobj,3,fobj,autodiff=true)
+            @variable(mle, μ, start = initialvalues[1])
+            @variable(mle, ϕ, start = log(initialvalues[2]))
+            @variable(mle, ξ, start = initialvalues[3])
+            @NLobjective(mle, Max, fobj(μ, ϕ, ξ) )
+            solution  = JuMP.solve(mle)
 
-        # https://discourse.julialang.org/t/the-function-to-optimize-in-jump/4964/13
-        mle = Model(solver=IpoptSolver(print_level=0))
-        JuMP.register(mle,:fobj,3,fobj,autodiff=true)
-        @variable(mle, μ, start = initialvalues[1])
-        @variable(mle, ϕ, start = log(initialvalues[2]))
-        @variable(mle, ξ, start = initialvalues[3])
-        @NLobjective(mle, Max, fobj(μ, ϕ, ξ) )
-        solution  = JuMP.solve(mle)
+            if solution == :Optimal
+                θ = [getvalue(μ) exp(getvalue(ϕ)) getvalue(ξ)]
+            else
+                error("The algorithm did not find a solution.")
+            end
 
-        if solution == :Optimal
-            return GeneralizedExtremeValue(getvalue(μ), exp(getvalue(ϕ)), getvalue(ξ))
-        else
-            error("The algorithm did not find a solution.")
+        elseif !isempty(location_covariate) & isempty(logscale_covariate)
+
+            if isempty(initialvalues)
+                initialvalues = zeros(4)
+                if length(y)>20
+                    θ₀ = gevfitlmom(y[1:20])
+                else
+                    θ₀ = gevfitlmom(y)
+                end
+                initialvalues[1] = θ₀[1]
+                initialvalues[3] = log(θ₀[2])
+                initialvalues[4] = θ₀[3]
+            end
+
+            fobj_location(μ₀, μ₁, ϕ, ξ) = sum(gevloglike.(y,μ₀+μ₁*location_covariate,exp(ϕ),ξ))
+            #mle = Model(solver=IpoptSolver(print_level=0, sb="yes"))
+            mle = Model(solver=IpoptSolver())
+            JuMP.register(mle,:fobj_location,4,fobj_location,autodiff=true)
+            @variable(mle, μ₀, start=  initialvalues[1])
+            @variable(mle, μ₁, start = initialvalues[2])
+            @variable(mle, ϕ, start = initialvalues[3])
+            @variable(mle, ξ, start= initialvalues[4])
+            @NLobjective(mle, Max, fobj_location(μ₀, μ₁, ϕ, ξ) )
+            solution  = JuMP.solve(mle)
+
+            if solution == :Optimal
+                θ = [getvalue(μ₀) getvalue(μ₁) exp(getvalue(ϕ)) getvalue(ξ)]
+            else
+                error("The algorithm did not find a solution.")
+            end
+
+        elseif isempty(location_covariate) & !isempty(logscale_covariate)
+
+            if isempty(initialvalues)
+                initialvalues = zeros(4)
+                if length(y)>20
+                    θ₀ = gevfitlmom(y[1:20])
+                else
+                    θ₀ = gevfitlmom(y)
+                end
+                initialvalues[1] = θ₀[1]
+                initialvalues[2] = log(θ₀[2])
+                initialvalues[4] = θ₀[3]
+            end
+
+            fobj_logscale(μ, ϕ₀, ϕ₁, ξ) = sum(gevloglike.(y,μ,exp.(ϕ₀+ϕ₁*logscale_covariate),ξ))
+            mle = Model(solver=IpoptSolver(print_level=0, sb="yes"))
+            JuMP.register(mle,:fobj_logscale,4,fobj_logscale,autodiff=true)
+            @variable(mle, μ, start=  initialvalues[1])
+            @variable(mle, ϕ₀, start = initialvalues[2])
+            @variable(mle, ϕ₁, start = initialvalues[3])
+            @variable(mle, ξ, start= initialvalues[4])
+            @NLobjective(mle, Max, fobj_logscale(μ, ϕ₀, ϕ₁, ξ) )
+            solution  = JuMP.solve(mle)
+
+            if solution == :Optimal
+                θ = [getvalue(μ) getvalue(ϕ₀) getvalue(ϕ₁) getvalue(ξ)]
+            else
+                error("The algorithm did not find a solution.")
+            end
+
+        elseif !isempty(location_covariate) & !isempty(logscale_covariate)
+
+            if isempty(initialvalues)
+                initialvalues = zeros(5)
+                if length(y)>20
+                    θ₀ = gevfitlmom(y[1:20])
+                else
+                    θ₀ = gevfitlmom(y)
+                end
+                initialvalues[1] = θ₀[1]
+                initialvalues[3] = log(θ₀[2])
+                initialvalues[5] = θ₀[3]
+            end
+
+            fobj_locationscale(μ₀, μ₁, ϕ₀, ϕ₁, ξ) = sum(gevloglike.(y,μ₀+μ₁*location_covariate,exp.(ϕ₀+ϕ₁*logscale_covariate),ξ))
+            mle = Model(solver=IpoptSolver(print_level=0, sb="yes"))
+            JuMP.register(mle,:fobj_locationscale,5,fobj_locationscale,autodiff=true)
+            @variable(mle, μ₀, start=  initialvalues[1])
+            @variable(mle, μ₁, start = initialvalues[2])
+            @variable(mle, ϕ₀, start = initialvalues[3])
+            @variable(mle, ϕ₁, start = initialvalues[4])
+            @variable(mle, ξ, start= initialvalues[5])
+            @NLobjective(mle, Max, fobj_locationscale(μ₀, μ₁, ϕ₀, ϕ₁, ξ) )
+            solution  = JuMP.solve(mle)
+
+            if solution == :Optimal
+                θ = [getvalue(μ₀) getvalue(μ₁) getvalue(ϕ₀) getvalue(ϕ₁) getvalue(ξ)]
+            else
+                error("The algorithm did not find a solution.")
+            end
+
         end
 
     elseif method == "lmom"
